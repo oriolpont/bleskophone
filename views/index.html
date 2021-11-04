@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<html>
+  <head>
+    <link href="../assets/material-icons.css" rel="stylesheet" type="text/css">
+    <link href="../assets/quasar.prod.css" rel="stylesheet" type="text/css">
+    <style>
+      .cogwheel {
+        font-size: 3vmin;
+        height: 12vmin;
+        width: 12vmin;
+      }
+      .settings {
+        font-size: 3vmin;
+      }
+      .settings-pop {
+        font-size: 5vmin;
+      }
+      .q-field__label {
+        font-size: 3vmin;
+      }
+      .famount {
+        font-size: 10vmin;
+      }
+      .numkey {
+        font-size: 7vmin;
+        height: 18vmin;
+        width: 18vmin;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app-blesko" align="center">
+      <div style="z-index: 1; position: absolute; right: 2vmin; top: 2vmin;">
+        <q-btn class="cogwheel" round icon="settings" @click="settings = true" />
+      </div>
+      <q-dialog v-model="settings" transition-show="fade" transition-hide="fade" maximized ref="settingsDialog" >
+        <q-card align="center">
+          <div class="row q-col-gutter-xs">
+            <div class="col-5">
+              <q-select filled class="settings" v-model="locale" :options="localeOptions" popup-content-class="settings-pop">
+                <template v-slot:append>
+                  <q-icon class="settings" name="translate" />
+                </template>
+              </q-select>
+            </div>
+            <div class="col-5">
+              <q-select filled class="settings" v-model="f" :options="fiatOptions" popup-content-class="settings-pop" />
+            </div>
+            <div class="col-10">
+              <q-input filled class="settings" v-model="baseUrl" label="callbackUrl" />
+            </div>
+            <div class="col-10">
+              <q-input filled class="settings" v-model="id" label="apiKey.id" />
+            </div>
+            <div class="col-12">
+              <q-input filled class="settings" v-model="secret" label="apiKey.key" :type="hideSecret ? 'password' : 'text'">
+                <template v-slot:append>
+                  <q-icon :name="hideSecret ? 'visibility_off' : 'visibility'" class="settings" @click="hideSecret = !hideSecret" />
+                </template>
+              </q-input>
+            </div>
+          </div>
+          <div style="position: absolute; right: 2vmin; top: 2vmin;">
+            <q-btn color="grey" class="cogwheel" round icon="settings" v-close-popup />
+          </div>
+        </q-card>
+      </q-dialog>
+
+      <div style="position: absolute; bottom: 10vh; width: 100vw;">
+        <div><p class="famount"> {{ famount }} </p></div>
+        <div>
+          <q-btn class="numkey" @click="amount += '1'">1</q-btn>
+          <q-btn class="numkey" @click="amount += '2'">2</q-btn>
+          <q-btn class="numkey" @click="amount += '3'">3</q-btn>
+        </div>
+        <div>
+          <q-btn class="numkey" @click="amount += '4'">4</q-btn>
+          <q-btn class="numkey" @click="amount += '5'">5</q-btn>
+          <q-btn class="numkey" @click="amount += '6'">6</q-btn>
+        </div>
+        <div>
+          <q-btn class="numkey" @click="amount += '7'">7</q-btn>
+          <q-btn class="numkey" @click="amount += '8'">8</q-btn>
+          <q-btn class="numkey" @click="amount += '9'">9</q-btn>
+        </div>
+        <div>
+          <q-btn class="numkey" color="yellow" @click="amount = amount.slice(0, amount.length - 1)">&lt;</q-btn>
+          <q-btn class="numkey" @click="amount += '0'">0</q-btn>
+          <q-btn class="numkey" color="green" @click="qrConfirm = true">&#10003;</q-btn>
+        </div>
+      </div>
+      <div>
+        <q-dialog v-model="qrConfirm" full-width full-height>
+          <q-card align="center">
+            <div><p style="font-size: 8vmin; white-space: pre-line;"> {{ confirmText }} </p></div>
+            <div style="z-index: 1; position: absolute; left: 1vmin; bottom: 1vmin;">
+              <q-btn style="font-size: 10vmin; width: 40vw; height: 20vh;" icon="close" color="red" v-close-popup />
+            </div>
+            <div style="z-index: 1; position: absolute; right: 1vmin; bottom: 1vmin;">
+              <q-btn style="font-size: 10vmin; width: 40vw; height: 20vh;" icon="check" color="green" v-close-popup @click="showQr" />
+            </div>
+          </q-card>
+        </q-dialog>
+      </div>
+      <div>
+        <q-dialog v-model="qrPop" maximized>
+          <q-card align="center">
+            <ul style="display: flex; flex-direction: column; justify-content: space-between; padding: 0; margin: 0; list-style: none; height: 100vh;">
+              <li><p style="font-size: 4vmin;"> {{ withdrawalText }} </p></li>
+              <li><div id="qrcode" style="height: 75vmin; width: 75vmin;"></div></li>
+              <li><q-btn style="font-size: 4vmin; width: 10vmin; height: 10vmin;" icon="close" color="red" v-close-popup /></li>
+            </ul>
+          </q-card>
+        </q-dialog>
+      </div>
+    </div>
+
+    <script src="../assets/vue.global.prod.js"></script>
+    <script src="../assets/quasar.umd.prod.js"></script>
+    <script src="../assets/bech32.js"></script>
+    <script src="../assets/qrcode.js"></script>
+    <script src="index.js"></script>
+    <script>
+      const fromHexString = hexString =>
+        new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)))
+
+      const getHmac = async (payload, secret) => {
+        const key = await crypto.subtle.importKey("raw", fromHexString(secret), {name: "HMAC", hash: "SHA-256"}, false, ["sign", "verify"])
+        const enc = new TextEncoder("utf-8")
+        const signature =  await crypto.subtle.sign("HMAC", key, enc.encode(payload))
+        const b = new Uint8Array(signature)
+        return Array.prototype.map.call(b, x => ('00'+x.toString(16)).slice(-2)).join("")
+      }
+
+      const getLnurl = async (baseUrl, f, id, amount, secret) => {
+        const query = {  // must be alphabetically ordered
+          defaultDescription: 'BleskoPhone',
+          f,
+          id,
+          maxWithdrawable: amount,
+          minWithdrawable: amount,
+          nonce: [...crypto.getRandomValues(new Uint8Array(10))].map(m=>('0'+m.toString(16)).slice(-2)).join(''),
+          tag: 'withdrawRequest',
+        }
+
+        const payload = new URLSearchParams(query).toString()
+        const signature = await getHmac(payload, secret)
+        const unencoded = baseUrl + '?'+ payload + '&signature=' + signature
+        const enc = new TextEncoder("utf-8")
+        const words = convert(enc.encode(unencoded), 8, 5, true)
+        return encode('lnurl', words, 1023)
+      }
+
+      const { ref } = Vue
+      const app = Vue.createApp({
+        setup () {
+          return {
+            settings: ref(false),
+            qrConfirm: ref(false),
+            qrPop: ref(false),
+          }
+        },
+        updated() {
+          if (this.qrPop) this.getQr()
+        },
+        data() {
+          return {
+            amount: "",
+            lnurl: "",
+            baseUrl: localStorage.baseUrl || "https://lnbits.com/bleskomat/u",
+            id: localStorage.id,
+            secret: localStorage.secret,
+            hideSecret: true,
+            f: localStorage.f || 'USD',
+            fiatOptions: ['USD', 'EUR'],
+            locale: localStorage.locale || 'English',
+            localeOptions: ['English', 'Español'],
+            confirmTextMessage: {
+              'English': 'Confirm that you received, in cash or equivalent:',
+              'Español': 'Confirme que recibió, en efectivo o equivalente:',
+            },
+            withdrawalTextMessage: {
+              'English': 'Let the customer scan to withdraw',
+              'Español': 'Permita al cliente escanear para retirar',
+            },
+          }
+        },
+        computed: {
+          famount: function () {
+            return (Number(this.amount) / 100).toFixed(2)
+          },
+          confirmText:  function () {
+            return this.confirmTextMessage[this.locale] + '\n\n' + this.f + ' ' + this.famount
+          },
+          withdrawalText:  function () {
+            return this.withdrawalTextMessage[this.locale] + ' ' + this.f + ' ' + this.famount
+          },
+        },
+        watch: {
+          baseUrl(newName) {
+            localStorage.baseUrl = newName;
+          },
+          id(newName) {
+            localStorage.id = newName;
+          },
+          secret(newName) {
+            localStorage.secret = newName;
+          },
+          f(newName) {
+            localStorage.f = newName;
+          },
+          locale(newName) {
+            localStorage.locale = newName;
+          },
+        },
+        methods: {
+          showQr: function () {
+            getLnurl(this.baseUrl, this.f, this.id, this.famount, this.secret).then(lnurl => {this.lnurl=lnurl; this.$forceUpdate()})
+            this.qrPop = true
+          },
+          getQr: function () {
+            const qrcode_holder = document.getElementById("qrcode")
+            const size = qrcode_holder.clientWidth
+            qrcode_holder.innerHTML = "";
+            const qrcode = new QRCode(qrcode_holder, {
+              width: size,
+              height: size,
+              correctLevel: QRCode.CorrectLevel.Q,
+            });
+
+            qrcode.makeCode(this.lnurl);
+          },
+        },
+      })
+      app.use(Quasar)
+      app.mount('#app-blesko')
+
+    </script>
+  </body>
+</html>
