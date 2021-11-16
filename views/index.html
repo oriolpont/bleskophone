@@ -68,7 +68,7 @@
       </q-dialog>
 
       <div style="position: absolute; bottom: 10vh; width: 100vw;">
-        <div><p class="famount"> {{ famount }} </p></div>
+        <div><p class="famount"> {{ fcurrency }} {{ famount }} </p></div>
         <div>
           <q-btn class="numkey" @click="amount += '1'">1</q-btn>
           <q-btn class="numkey" @click="amount += '2'">2</q-btn>
@@ -185,7 +185,7 @@
             secret: localStorage.secret,
             hideSecret: true,
             f: localStorage.f || 'USD',
-            fiatOptions: ['USD', 'EUR'],
+            fiatOptions: ['USD', 'EUR', 'COP'],
             locale: localStorage.locale || 'English',
             localeOptions: ['English', 'Español'],
             confirmTextMessage: {
@@ -203,6 +203,9 @@
           }
         },
         computed: {
+          fcurrency: function () {
+            return this.f
+          },
           famount: function () {
             return (Number(this.amount) / 100).toFixed(2)
           },
