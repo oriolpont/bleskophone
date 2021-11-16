@@ -114,6 +114,17 @@
           </q-card>
         </q-dialog>
       </div>
+      <div>
+        <q-dialog v-model="error" maximized>
+          <q-card align="center">
+            <ul style="display: flex; flex-direction: column; justify-content: space-between; padding: 0; margin: 0; list-style: none; height: 100vh;">
+              <li><p style="font-size: 4vmin;"> Error </p></li>
+              <li><p style="font-size: 4vmin;"> {{ configErrorText }} </p></li>
+              <li><q-btn style="font-size: 4vmin; width: 10vmin; height: 10vmin;" icon="close" color="red" v-close-popup /></li>
+            </ul>
+          </q-card>
+        </q-dialog>
+      </div>
     </div>
 
     <script src="../assets/vue.global.prod.js"></script>
@@ -159,6 +170,7 @@
             settings: ref(false),
             qrConfirm: ref(false),
             qrPop: ref(false),
+            error: ref(false),
           }
         },
         updated() {
@@ -184,6 +196,10 @@
               'English': 'Let the customer scan to withdraw',
               'Español': 'Permita al cliente escanear para retirar',
             },
+            configErrorTextMessage: {
+              'English': 'Missing config info',
+              'Español': 'Falta información de configuración',
+            },
           }
         },
         computed: {
@@ -195,6 +211,9 @@
           },
           withdrawalText:  function () {
             return this.withdrawalTextMessage[this.locale] + ' ' + this.f + ' ' + this.famount
+          },
+          configErrorText:  function () {
+            return this.configErrorTextMessage[this.locale]
           },
         },
         watch: {
@@ -216,8 +235,13 @@
         },
         methods: {
           showQr: function () {
-            getLnurl(this.baseUrl, this.f, this.id, this.famount, this.secret).then(lnurl => {this.lnurl=lnurl; this.$forceUpdate()})
-            this.qrPop = true
+		        if(!this.secret || !this.secret) {
+			       this.error = true
+		        }
+		        else {
+              getLnurl(this.baseUrl, this.f, this.id, this.famount, this.secret).then(lnurl => {this.lnurl=lnurl; this.$forceUpdate()})
+		          this.qrPop = true
+		        }
           },
           getQr: function () {
             const qrcode_holder = document.getElementById("qrcode")
