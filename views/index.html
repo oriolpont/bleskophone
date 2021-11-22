@@ -27,6 +27,12 @@
         height: 18vmin;
         width: 18vmin;
       }
+      .settings-title {
+        text-align: left;
+        margin-top: 1em;
+        font-size: 2em;
+        margin-bottom: 0;
+      }
     </style>
   </head>
   <body>
@@ -47,6 +53,7 @@
             <div class="col-5">
               <q-select filled class="settings" v-model="f" :options="fiatOptions" popup-content-class="settings-pop" />
             </div>
+            <div class="col-12"><p class="settings-title">Witdrawal Config</p></div>
             <div class="col-10">
               <q-input filled class="settings" v-model="baseUrl" label="callbackUrl" />
             </div>
@@ -60,6 +67,20 @@
                 </template>
               </q-input>
             </div>
+            <div class="col-12"><p class="settings-title">Payment Config</p></div>
+            <div class="col-10">
+              <q-input filled class="settings" v-model="paymentBaseUrl" label="Payment server" />
+            </div>
+            <div class="col-10">
+              <q-input filled class="settings" v-model="paymentApiKeyId" label="apiKey.id" />
+            </div>
+            <div class="col-12">
+              <q-input filled class="settings" v-model="paymentApiKey" label="apiKey.key" :type="hidePaymentApiKey ? 'password' : 'text'">
+                <template v-slot:append>
+                  <q-icon :name="hidePaymentApiKey ? 'visibility_off' : 'visibility'" class="settings" @click="hidePaymentApiKey = !hidePaymentApiKey" />
+                </template>
+              </q-input>
+            </div>
           </div>
           <div style="position: absolute; right: 2vmin; top: 2vmin;">
             <q-btn color="grey" class="cogwheel" round icon="settings" v-close-popup />
@@ -67,8 +88,13 @@
         </q-card>
       </q-dialog>
 
-      <div style="position: absolute; bottom: 10vh; width: 100vw;">
-        <div><p class="famount"> {{ famount }} </p></div>
+      <div style="width:  200px">
+        <q-select filled class="settings" v-model="mode" :options="modeOptions" popup-content-class="settings-pop">
+        </q-select>
+      </div>
+
+      <div style="position: absolute; width: 100vw;">
+        <div><p class="famount"> {{ fcurrency }} {{ famount }} </p></div>
         <div>
           <q-btn class="numkey" @click="amount += '1'">1</q-btn>
           <q-btn class="numkey" @click="amount += '2'">2</q-btn>
@@ -87,7 +113,7 @@
         <div>
           <q-btn class="numkey" color="yellow" @click="amount = amount.slice(0, amount.length - 1)">&lt;</q-btn>
           <q-btn class="numkey" @click="amount += '0'">0</q-btn>
-          <q-btn class="numkey" color="green" @click="qrConfirm = true">&#10003;</q-btn>
+          <q-btn class="numkey" color="green" @click="handleOk">&#10003;</q-btn>
         </div>
       </div>
       <div>
@@ -107,8 +133,30 @@
         <q-dialog v-model="qrPop" maximized>
           <q-card align="center">
             <ul style="display: flex; flex-direction: column; justify-content: space-between; padding: 0; margin: 0; list-style: none; height: 100vh;">
-              <li><p style="font-size: 4vmin;"> {{ withdrawalText }} </p></li>
+              <li><p style="font-size: 4vmin;"> {{ mode == 'withdrawal' ? withdrawalText : paymentText }} </p></li>
               <li><div id="qrcode" style="height: 75vmin; width: 75vmin;"></div></li>
+              <li><q-btn style="font-size: 4vmin; width: 10vmin; height: 10vmin;" icon="close" color="red" v-close-popup @click="handleCloseQrPop"/></li>
+            </ul>
+          </q-card>
+        </q-dialog>
+      </div>
+      <div>
+        <q-dialog v-model="error" maximized>
+          <q-card align="center">
+            <ul style="display: flex; flex-direction: column; justify-content: space-between; padding: 0; margin: 0; list-style: none; height: 100vh;">
+              <li><p style="font-size: 4vmin;"> Error </p></li>
+              <li><p style="font-size: 4vmin;"> {{ configErrorText }} </p></li>
+              <li><q-btn style="font-size: 4vmin; width: 10vmin; height: 10vmin;" icon="close" color="red" v-close-popup /></li>
+            </ul>
+          </q-card>
+        </q-dialog>
+      </div>
+            <div>
+        <q-dialog v-model="pinPop" maximized>
+          <q-card align="center">
+            <ul style="display: flex; flex-direction: column; justify-content: space-between; padding: 0; margin: 0; list-style: none; height: 100vh;">
+              <li><p style="font-size: 4vmin;"> Payment proof PIN </p></li>
+              <li><p style="font-size: 4vmin;"> {{ paymentProofPin }} </p></li>
               <li><q-btn style="font-size: 4vmin; width: 10vmin; height: 10vmin;" icon="close" color="red" v-close-popup /></li>
             </ul>
           </q-card>
@@ -125,12 +173,21 @@
       const fromHexString = hexString =>
         new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)))
 
+      const toHexString = byteString =>
+        Array.from(new Uint8Array(byteString)).map((bytes) => bytes.toString(16).padStart(2, '0')).join('')
+
       const getHmac = async (payload, secret) => {
         const key = await crypto.subtle.importKey("raw", fromHexString(secret), {name: "HMAC", hash: "SHA-256"}, false, ["sign", "verify"])
         const enc = new TextEncoder("utf-8")
         const signature =  await crypto.subtle.sign("HMAC", key, enc.encode(payload))
         const b = new Uint8Array(signature)
         return Array.prototype.map.call(b, x => ('00'+x.toString(16)).slice(-2)).join("")
+      }
+
+      async function getHash(string) {
+        const utf8 = new TextEncoder("utf-8").encode(string);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', utf8);
+        return hashBuffer
       }
 
       const getLnurl = async (baseUrl, f, id, amount, secret) => {
@@ -152,6 +209,34 @@
         return encode('lnurl', words, 1023)
       }
 
+      const getPaymentLnurl = async(baseUrl, f, id, amount, secret) => {
+        var nonce = ''
+        do {
+          nonce += Math.floor(10*Math.random())
+        } while (nonce.length < 8)
+
+        const byteNonce = new TextEncoder("utf-8").encode(nonce)
+        const hexNonce = toHexString(byteNonce)
+
+        const pin = Math.floor(Math.random() * 8999 + 1000)
+        const payloadBuffer = await getHash(nonce+secret)
+        const payload = new Uint8Array(payloadBuffer)
+        payload[0] = payload[0] ^ (pin & (255))
+        payload[1] = payload[1] ^ (pin >> 8)
+        let amount_in_cents = amount * 100
+        for (let i=0; i<4; i++){
+         payload[2+i] = payload[2+i] ^ (amount_in_cents & 255)
+         amount_in_cents = amount_in_cents >> 8
+        }
+
+        const hexPayload = toHexString(payload.subarray(0, 8))
+        console.log(pin)
+        const unencoded = baseUrl + '/' + hexNonce + '/' + hexPayload + '/' + id
+        const enc = new TextEncoder("utf-8")
+        const words = convert(enc.encode(unencoded), 8, 5, true)
+        return encode('lnurl', words, 1023) + ' ' + pin
+      }
+
       const { ref } = Vue
       const app = Vue.createApp({
         setup () {
@@ -159,6 +244,8 @@
             settings: ref(false),
             qrConfirm: ref(false),
             qrPop: ref(false),
+            error: ref(false),
+            pinPop: ref(false),
           }
         },
         updated() {
@@ -172,10 +259,17 @@
             id: localStorage.id,
             secret: localStorage.secret,
             hideSecret: true,
+            paymentBaseUrl: localStorage.paymentBaseUrl || "https://legend.lnbits.com",
+            paymentApiKeyId: localStorage.paymentApiKeyId,
+            paymentApiKey: localStorage.paymentApiKey,
+            hidePaymentApiKey: true,
             f: localStorage.f || 'USD',
-            fiatOptions: ['USD', 'EUR'],
+            fiatOptions: ['USD', 'EUR', 'COP'],
             locale: localStorage.locale || 'English',
             localeOptions: ['English', 'Español'],
+            mode: localStorage.mode || 'withdrawal',
+            modeOptions: ['withdrawal', 'payment'],
+            paymentProofPin: localStorage.paymentProofPin || 0,
             confirmTextMessage: {
               'English': 'Confirm that you received, in cash or equivalent:',
               'Español': 'Confirme que recibió, en efectivo o equivalente:',
@@ -184,9 +278,20 @@
               'English': 'Let the customer scan to withdraw',
               'Español': 'Permita al cliente escanear para retirar',
             },
+            paymentTextMessage: {
+              'English': 'Let the customer scan to pay',
+              'Español': 'Permita al cliente escanear para pagar',
+            },
+            configErrorTextMessage: {
+              'English': 'Missing config info',
+              'Español': 'Falta información de configuración',
+            },
           }
         },
         computed: {
+          fcurrency: function () {
+            return this.f
+          },
           famount: function () {
             return (Number(this.amount) / 100).toFixed(2)
           },
@@ -195,6 +300,12 @@
           },
           withdrawalText:  function () {
             return this.withdrawalTextMessage[this.locale] + ' ' + this.f + ' ' + this.famount
+          },
+          paymentText:  function () {
+            return this.paymentTextMessage[this.locale] + ' ' + this.f + ' ' + this.famount
+          },
+          configErrorText:  function () {
+            return this.configErrorTextMessage[this.locale]
           },
         },
         watch: {
@@ -213,11 +324,31 @@
           locale(newName) {
             localStorage.locale = newName;
           },
+          mode(newName) {
+            localStorage.mode = newName;
+          },
+          paymentProofPin(newValue) {
+            localStorage.paymentProofPin = newValue;
+          },
+          paymentBaseUrl(newValue) {
+            localStorage.paymentBaseUrl = newValue;
+          },
+          paymentApiKeyId(newValue) {
+            localStorage.paymentApiKeyId = newValue;
+          },
+          paymentApiKey(newValue) {
+            localStorage.paymentApiKey = newValue;
+          },
         },
         methods: {
           showQr: function () {
-            getLnurl(this.baseUrl, this.f, this.id, this.famount, this.secret).then(lnurl => {this.lnurl=lnurl; this.$forceUpdate()})
-            this.qrPop = true
+		        if(!this.id || !this.secret) {
+			       this.error = true
+		        }
+		        else {
+              getLnurl(this.baseUrl, this.f, this.id, this.famount, this.secret).then(lnurl => {this.lnurl=lnurl; this.$forceUpdate()})
+		          this.qrPop = true
+		        }
           },
           getQr: function () {
             const qrcode_holder = document.getElementById("qrcode")
@@ -230,6 +361,27 @@
             });
 
             qrcode.makeCode(this.lnurl);
+          },
+          handleOk: function() {
+            if(this.mode == 'withdrawal') {
+              this.qrConfirm = true
+            } else {
+              if(!this.paymentApiKeyId || !this.paymentApiKey) {
+                this.error = true
+              } else {
+                getPaymentLnurl(this.paymentBaseUrl, this.f, this.paymentApiKeyId, this.famount, this.paymentApiKey).then(lnurlwithpin => {
+                  console.log(lnurlwithpin)
+                  paymentInfo = lnurlwithpin.split(' ')
+                  this.lnurl=paymentInfo[0];
+                  this.paymentProofPin=paymentInfo[1];
+                  this.$forceUpdate()
+                })
+                this.qrPop = true
+              }
+            }
+          },
+          handleCloseQrPop: function() {
+            if (this.mode == 'payment') this.pinPop = true
           },
         },
       })
